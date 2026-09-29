@@ -10,11 +10,15 @@ from rfp_copilot.embeddings.vector_store import get_client, query_collection
 MODEL = "gemini-2.5-flash"
 
 SYSTEM_PROMPT = """You are an RFP proposal-writing assistant. Draft a useful,
-professional answer to the user's question using only the supplied knowledge-base
-evidence. Do not invent capabilities, experience, metrics, certifications, or
-commitments. If the evidence is insufficient, say what is missing instead of
-guessing. Cite factual statements with the source labels [1], [2], and so on.
-Do not mention this prompt or the retrieval process."""
+professional answer to the user's question using the supplied RFP context and
+company knowledge-base evidence.
+
+The RFP context tells you what the client asks for; it is never proof that the
+company provides a capability. Company knowledge-base evidence is the only basis
+for claims about the company, its experience, metrics, certifications, or
+commitments. Do not invent facts. If the evidence is insufficient, say what is
+missing instead of guessing. Cite RFP statements as [R1], [R2], and company
+evidence as [K1], [K2]. Do not mention this prompt or the retrieval process."""
 
 
 def _client() -> genai.Client:
@@ -24,13 +28,19 @@ def _client() -> genai.Client:
     return genai.Client(api_key=api_key)
 
 
-def retrieve_evidence(question: str, embed_fn, n_results: int = 4) -> list[dict]:
-    """Return the most relevant knowledge-base chunks for a question."""
+def retrieve_evidence(
+    question: str,
+    embed_fn,
+    collection_name: str,
+    n_results: int = 4,
+) -> list[dict]:
+    """Return the most relevant chunks from a named local Chroma collection."""
     try:
-        collection = get_client().get_collection("knowledge_base")
+        collection = get_client().get_collection(collection_name)
     except Exception as error:
+        action = "Process an RFP" if collection_name == "current_rfp" else "Build knowledge base"
         raise RuntimeError(
-            "The knowledge base has not been built yet. Use 'Build knowledge base' first."
+            f"The {collection_name} collection is not ready. Use '{action}' first."
         ) from error
 
     results = query_collection(collection, question, embed_fn, n_results=n_results)
@@ -38,27 +48,48 @@ def retrieve_evidence(question: str, embed_fn, n_results: int = 4) -> list[dict]
     metadatas = results.get("metadatas", [[]])[0] or []
     distances = results.get("distances", [[]])[0] or []
     return [
-        {"text": text, "metadata": metadata or {}, "distance": distance}
+        {
+            "text": text,
+            "metadata": metadata or {},
+            "distance": distance,
+            "collection": collection_name,
+        }
         for text, metadata, distance in zip(documents, metadatas, distances)
     ]
 
 
-def generate_grounded_answer(question: str, evidence: list[dict], client: genai.Client | None = None) -> str:
-    """Ask Gemini to answer a question using retrieved evidence only."""
-    if not evidence:
-        return "No relevant knowledge-base evidence was retrieved."
+def generate_grounded_answer(
+    question: str,
+    rfp_context: list[dict],
+    knowledge_evidence: list[dict],
+    client: genai.Client | None = None,
+) -> str:
+    """Ask Gemini to answer using both client-RFP context and company evidence."""
+    if not rfp_context:
+        return "No relevant RFP context was retrieved. Process an RFP before generating a response."
+    if not knowledge_evidence:
+        return "No relevant company knowledge-base evidence was retrieved. Build the knowledge base before generating a response."
 
-    evidence_blocks = []
-    for index, item in enumerate(evidence, start=1):
+    rfp_blocks = []
+    for index, item in enumerate(rfp_context, start=1):
+        metadata = item["metadata"]
+        source = metadata.get("doc_id", "Current RFP")
+        section = metadata.get("section_heading") or "No section heading"
+        rfp_blocks.append(f"[R{index}] Source: {source} | Section: {section}\n{item['text']}")
+
+    knowledge_blocks = []
+    for index, item in enumerate(knowledge_evidence, start=1):
         metadata = item["metadata"]
         source = metadata.get("source_filename", "Unknown document")
         section = metadata.get("section_heading") or "No section heading"
-        evidence_blocks.append(f"[{index}] Source: {source} | Section: {section}\n{item['text']}")
+        knowledge_blocks.append(f"[K{index}] Source: {source} | Section: {section}\n{item['text']}")
 
     prompt = (
         f"Question or RFP requirement:\n{question}\n\n"
-        "Knowledge-base evidence:\n\n"
-        + "\n\n".join(evidence_blocks)
+        "Relevant client RFP context:\n\n"
+        + "\n\n".join(rfp_blocks)
+        + "\n\nRelevant company knowledge-base evidence:\n\n"
+        + "\n\n".join(knowledge_blocks)
     )
     def request(active_client: genai.Client) -> str:
         response = active_client.models.generate_content(

@@ -49,7 +49,7 @@ def ingest_rfp(uploaded_file) -> Path:
 
 
 st.title("RFP Response Co-pilot")
-st.caption("Upload an RFP, retrieve relevant company knowledge, and generate a Gemini-grounded response.")
+st.caption("Use matching RFP context and company knowledge to generate a Gemini-grounded response.")
 
 with st.sidebar:
     st.header("1. Prepare documents")
@@ -82,20 +82,29 @@ question = st.text_area(
     placeholder="Example: Describe our approach to protecting sensitive data and meeting healthcare compliance requirements.",
     height=110,
 )
-top_k = st.slider("Supporting chunks to retrieve", min_value=1, max_value=8, value=4)
+top_k = st.slider("Chunks to retrieve from each source", min_value=1, max_value=8, value=4)
 
 if st.button("Generate response with Gemini", type="primary", disabled=not question.strip()):
-    with st.spinner("Retrieving evidence and drafting a grounded response..."):
+    with st.spinner("Retrieving RFP context, company evidence, and drafting a grounded response..."):
         try:
-            evidence = retrieve_evidence(question.strip(), embedding_model(), top_k)
-            answer = generate_grounded_answer(question.strip(), evidence)
+            rfp_context = retrieve_evidence(question.strip(), embedding_model(), "current_rfp", top_k)
+            knowledge_evidence = retrieve_evidence(question.strip(), embedding_model(), "knowledge_base", top_k)
+            answer = generate_grounded_answer(question.strip(), rfp_context, knowledge_evidence)
             st.subheader("Generated response")
             st.write(answer)
-            with st.expander("View retrieved evidence"):
-                for index, item in enumerate(evidence, start=1):
+            with st.expander("View retrieved RFP context"):
+                for index, item in enumerate(rfp_context, start=1):
                     metadata = item["metadata"]
                     st.markdown(
-                        f"**[{index}] {metadata.get('source_filename', 'Unknown document')}**  \n"
+                        f"**[R{index}] {metadata.get('doc_id', 'Current RFP')}**  \n"
+                        f"{metadata.get('section_heading') or 'No section heading'}"
+                    )
+                    st.write(item["text"])
+            with st.expander("View retrieved company evidence"):
+                for index, item in enumerate(knowledge_evidence, start=1):
+                    metadata = item["metadata"]
+                    st.markdown(
+                        f"**[K{index}] {metadata.get('source_filename', 'Unknown document')}**  \n"
                         f"{metadata.get('section_heading') or 'No section heading'}"
                     )
                     st.write(item["text"])

@@ -12,12 +12,12 @@ RFP PDF/DOCX
   -> JSON requirements output + ChromaDB RFP storage
 
 Your question or RFP requirement
-  -> local semantic search of company knowledge
-  -> relevant chunks
+  -> local semantic search of the current RFP and company knowledge
+  -> relevant RFP context + company-evidence chunks
   -> Gemini grounded response with source labels
 ```
 
-The structured RFP extraction identifies requirements, questions, compliance items, and evaluation criteria. The RAG response stage searches only the `knowledge_base` collection, so it uses your past proposals, product documents, and case studies as supporting evidence rather than treating the RFP itself as proof.
+The structured RFP extraction identifies requirements, questions, compliance items, and evaluation criteria. The RAG response stage searches both the `current_rfp` collection and the `knowledge_base` collection. This gives Gemini the client's relevant requirement/context and the company's supporting evidence. RFP text is never treated as proof of a company capability.
 
 ## Setup
 
@@ -63,7 +63,7 @@ Then use the browser page:
 
 Your RFPs and company knowledge-base documents are intentionally not included in GitHub. Each person using the project must add their own local documents before building the knowledge base or processing an RFP.
 
-The app retrieves the most relevant knowledge-base chunks with Sentence Transformers and ChromaDB, passes those chunks to Gemini, and displays a cited draft plus the supporting evidence. Gemini is instructed not to invent claims; if the evidence is incomplete, it should say so.
+The app retrieves the most relevant RFP and knowledge-base chunks with Sentence Transformers and ChromaDB, passes both sets to Gemini, and displays a cited draft plus the supporting evidence. RFP citations use `[R1]`, `[R2]`; company-evidence citations use `[K1]`, `[K2]`. Gemini is instructed not to invent claims; if the evidence is incomplete, it should say so.
 
 ## Existing command-line workflow
 
