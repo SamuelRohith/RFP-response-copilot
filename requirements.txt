@@ -1,0 +1,10 @@
+pymupdf
+python-docx
+pydantic
+langchain-text-splitters
+tiktoken
+google-genai
+python-dotenv
+chromadb
+sentence-transformers
+streamlit
