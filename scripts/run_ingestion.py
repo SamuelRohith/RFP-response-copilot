@@ -12,7 +12,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from rfp_copilot.embeddings.embedder import get_sentence_transformer_embedder
 from rfp_copilot.embeddings.vector_store import store_rfp_chunks
 from rfp_copilot.extraction.extractor import extract_from_chunks, save_structured_requirements
-from rfp_copilot.ingestion.chunkers import chunk_document
+from rfp_copilot.ingestion.chunkers import chunk_document_blocks
 from rfp_copilot.ingestion.cleaners import clean_text
 from rfp_copilot.ingestion.loaders import load_document
 
@@ -23,8 +23,7 @@ OUTPUT_DIR = PROJECT_ROOT / "data" / "outputs"
 def run_rfp(rfp_path: Path, use_dummy_embeddings: bool = False) -> Path:
     """Run one RFP end-to-end and return its structured JSON output path."""
     document = load_document(str(rfp_path))
-    cleaned = clean_text(document.text)
-    chunks = chunk_document(cleaned, doc_id=rfp_path.name)
+    chunks = chunk_document_blocks(document.blocks, doc_id=rfp_path.name)
     print(f"Loaded {rfp_path.name}: {len(document.text)} raw chars -> {len(chunks)} chunks")
 
     extraction = extract_from_chunks(chunks)

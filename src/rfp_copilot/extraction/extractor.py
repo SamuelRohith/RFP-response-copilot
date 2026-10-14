@@ -19,10 +19,14 @@ text:
 - questions: things the vendor is explicitly asked to answer
 - compliance_items: mandatory pass/fail eligibility conditions
 - evaluation_criteria: how proposals will be scored, including weights when stated
+- submission_instructions: deadlines, file formats, volumes, delivery methods, or other submission rules
 
 Do not invent information or extract section headings without substantive content.
 Return empty lists for categories with no matching items. Use the supplied section
-heading as source_section for every extracted item."""
+heading as source_section for every extracted item. Requirement category must be
+one of functional, technical, security, compliance, business, performance,
+integration, delivery, or other. Priority must be mandatory, recommended,
+optional, or unknown."""
 
 
 def _client() -> genai.Client:

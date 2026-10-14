@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from ingestion.loaders import load_document
 from ingestion.cleaners import clean_text
-from ingestion.chunkers import chunk_document, Chunk
+from ingestion.chunkers import chunk_document_blocks, Chunk
 
 KB_ROOT = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "knowledge_base")
 DOC_TYPE_FOLDERS = {"past_proposals", "product_docs", "case_studies"}
@@ -73,8 +73,9 @@ def build_knowledge_base(kb_root: str = KB_ROOT, max_chunk_chars: int = 1500) ->
                 print(f"WARNING: failed to load {file_path}: {e}")
                 continue
 
-            cleaned = clean_text(doc.text)
-            chunks = chunk_document(cleaned, doc_id=filename, max_chunk_chars=max_chunk_chars)
+            # Keep source order and provenance from the loader. Text cleaning is
+            # still applied to each emitted chunk downstream by the extractor.
+            chunks = chunk_document_blocks(doc.blocks, doc_id=filename, max_chunk_chars=max_chunk_chars)
 
             for c in chunks:
                 kb_chunks.append(

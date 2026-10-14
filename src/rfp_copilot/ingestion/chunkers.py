@@ -12,6 +12,8 @@ extraction and retrieval both benefit from) instead of chunking blind.
 import re
 from dataclasses import dataclass, field
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from .loaders import DocumentBlock
+from .cleaners import clean_text
 
 # Matches heading patterns seen across both sample RFPs:
 #   "1. Introduction and Background"
@@ -87,7 +89,12 @@ def chunk_document(
         else:
             pieces = fallback_splitter.split_text(section_text)
 
+        search_start = 0
         for piece in pieces:
+            start_char = section_text.find(piece, search_start)
+            if start_char < 0:
+                start_char = search_start
+            search_start = start_char + max(1, len(piece) - chunk_overlap)
             chunk_counter += 1
             chunks.append(
                 Chunk(
@@ -98,10 +105,64 @@ def chunk_document(
                         "doc_id": doc_id,
                         "char_count": len(piece),
                         "was_split_further": len(pieces) > 1,
+                        "page": None,
+                        "block_index": None,
+                        "start_char": start_char,
+                        "end_char": start_char + len(piece),
                     },
                 )
             )
 
+    return chunks
+
+
+def chunk_document_blocks(
+    blocks: list[DocumentBlock],
+    doc_id: str,
+    max_chunk_chars: int = 1500,
+    chunk_overlap: int = 150,
+) -> list[Chunk]:
+    """Chunk source-ordered blocks while retaining page, section, and block metadata."""
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=max_chunk_chars,
+        chunk_overlap=chunk_overlap,
+        separators=["\n\n", "\n", ". ", " ", ""],
+    )
+    chunks: list[Chunk] = []
+    current_section = None
+    for block in blocks:
+        text = clean_text(block.text)
+        if not text:
+            continue
+        if text.startswith("## "):
+            current_section = text[3:].strip()
+            continue
+        section = block.section or current_section
+        pieces = [text] if len(text) <= max_chunk_chars else splitter.split_text(text)
+        search_start = 0
+        for piece in pieces:
+            start_char = text.find(piece, search_start)
+            if start_char < 0:
+                start_char = search_start
+            search_start = start_char + max(1, len(piece) - chunk_overlap)
+            chunk_number = len(chunks) + 1
+            chunks.append(
+                Chunk(
+                    text=piece,
+                    chunk_id=f"{doc_id}-chunk-{chunk_number:03d}",
+                    section_heading=section,
+                    metadata={
+                        "doc_id": doc_id,
+                        "char_count": len(piece),
+                        "was_split_further": len(pieces) > 1,
+                        "page": block.page,
+                        "block_index": block.block_index,
+                        "block_type": block.block_type,
+                        "start_char": start_char,
+                        "end_char": start_char + len(piece),
+                    },
+                )
+            )
     return chunks
 
 

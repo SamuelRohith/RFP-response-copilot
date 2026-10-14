@@ -5,7 +5,7 @@ Pluggable by design: swap the embedding function without touching
 vector_store.py or anything upstream. Two implementations are provided:
 
   - get_sentence_transformer_embedder()  <- USE THIS on your machine.
-    Uses `all-MiniLM-L6-v2` via sentence-transformers: free, runs locally,
+    Uses `BAAI/bge-small-en-v1.5` via sentence-transformers: free, runs locally,
     no API key needed, good baseline quality. Downloads model weights from
     Hugging Face on first run (needs normal internet access).
 
@@ -18,7 +18,6 @@ vector_store.py or anything upstream. Two implementations are provided:
 """
 
 import hashlib
-import struct
 
 
 def get_dummy_embedder(dim: int = 384):
@@ -39,7 +38,7 @@ def get_dummy_embedder(dim: int = 384):
     return embed
 
 
-def get_sentence_transformer_embedder(model_name: str = "all-MiniLM-L6-v2"):
+def get_sentence_transformer_embedder(model_name: str = "BAAI/bge-small-en-v1.5"):
     """Real embedder for actual use. Requires: pip install sentence-transformers"""
     from sentence_transformers import SentenceTransformer
 

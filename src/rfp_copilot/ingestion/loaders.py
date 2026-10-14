@@ -1,107 +1,112 @@
-"""
-loaders.py — document loading layer for the RFP Response Co-pilot.
-
-Design principle: every loader returns the SAME shape (LoadedDocument),
-regardless of source format. Nothing downstream should ever need to know
-whether the original file was a PDF or a DOCX.
-"""
+"""Page- and block-aware PDF/DOCX loading for the Week 5 ingestion pipeline."""
 
 from dataclasses import dataclass, field
-import pymupdf as fitz  # PyMuPDF
-import docx  # python-docx
+from pathlib import Path
+
+from docx import Document
+from docx.table import Table
+from docx.text.paragraph import Paragraph
+from pypdf import PdfReader
+
+
+@dataclass
+class DocumentBlock:
+    """One source-ordered piece of a document, retaining its provenance."""
+
+    text: str
+    page: int | None = None
+    section: str | None = None
+    block_index: int = 0
+    block_type: str = "paragraph"
 
 
 @dataclass
 class LoadedDocument:
-    text: str                      # full raw extracted text, pages joined
-    pages: list[str]                # per-page (PDF) or per-section (DOCX) text
+    text: str
+    pages: list[str]
+    blocks: list[DocumentBlock] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
 
 
-def load_pdf(path: str) -> LoadedDocument:
-    doc = fitz.open(path)
-    pages = []
-    for page in doc:
-        # "text" mode is a reasonable default; PyMuPDF also supports
-        # "blocks" / "dict" modes that preserve layout/position info,
-        # which you may need later for table-heavy RFPs.
-        pages.append(page.get_text("text"))
-    doc.close()
+def _table_to_text(table: Table) -> str:
+    """Turn a DOCX table into readable header/value rows without losing values."""
+    rows = [[cell.text.strip() for cell in row.cells] for row in table.rows]
+    if not rows:
+        return ""
+    headers = rows[0]
+    result = []
+    for values in rows[1:]:
+        pairs = [f"{header}: {value}" for header, value in zip(headers, values) if value]
+        if pairs:
+            result.append("; ".join(pairs))
+    return "\n".join(result) if result else " | ".join(headers)
 
+
+def load_pdf(path: str) -> LoadedDocument:
+    """Extract each PDF page separately so page provenance remains available."""
+    reader = PdfReader(path)
+    pages = []
+    blocks = []
+    for index, page in enumerate(reader.pages, start=1):
+        text = page.extract_text() or ""
+        pages.append(text)
+        if text.strip():
+            blocks.append(DocumentBlock(text=text, page=index, block_index=index - 1, block_type="page"))
     return LoadedDocument(
-        text="\n".join(pages),
+        text="\n\n".join(pages),
         pages=pages,
-        metadata={
-            "source_type": "pdf",
-            "filename": path.split("/")[-1],
-            "page_count": len(pages),
-        },
+        blocks=blocks,
+        metadata={"source_type": "pdf", "filename": Path(path).name, "page_count": len(pages)},
     )
 
 
 def load_docx(path: str) -> LoadedDocument:
-    """Uses python-docx's higher-level paragraph API (rather than raw XML
-    iteration) so we can read each paragraph's style name. Any paragraph
-    styled as a heading ("Heading 1", "Heading 2", ...) is prefixed with
-    "## " in the output text — a lightweight, format-agnostic way to carry
-    that structural signal through to the chunker, since plain extracted
-    text otherwise throws heading information away entirely."""
-    d = docx.Document(path)
-    sections = []
-    heading_count = 0
+    """Read paragraphs and tables in native body order, preserving headings."""
+    document = Document(path)
+    blocks = []
+    current_section = None
+    table_count = 0
+    paragraph_count = 0
 
-    for para in d.paragraphs:
-        text = para.text.strip()
-        if not text:
-            continue
-        style_name = (para.style.name or "") if para.style else ""
-        if style_name.startswith("Heading"):
-            sections.append(f"## {text}")
-            heading_count += 1
-        else:
-            sections.append(text)
+    for element in document.element.body.iterchildren():
+        if element.tag.endswith("}p"):
+            paragraph = Paragraph(element, document)
+            text = paragraph.text.strip()
+            if not text:
+                continue
+            style_name = paragraph.style.name if paragraph.style else ""
+            if style_name.startswith("Heading"):
+                current_section = text
+                text = f"## {text}"
+            blocks.append(DocumentBlock(text=text, section=current_section, block_index=len(blocks)))
+            paragraph_count += 1
+        elif element.tag.endswith("}tbl"):
+            text = _table_to_text(Table(element, document))
+            if text:
+                blocks.append(DocumentBlock(text=f"[TABLE]\n{text}", section=current_section, block_index=len(blocks), block_type="table"))
+            table_count += 1
 
-    # Tables need separate handling — python-docx exposes them at doc level,
-    # not interleaved with body paragraphs via the .paragraphs API
-    table_texts = []
-    for table in d.tables:
-        for row in table.rows:
-            row_text = " | ".join(cell.text.strip() for cell in row.cells)
-            table_texts.append(row_text)
-
-    all_text = "\n".join(sections)
-    if table_texts:
-        all_text += "\n\n[TABLES]\n" + "\n".join(table_texts)
-
+    block_text = [block.text for block in blocks]
     return LoadedDocument(
-        text=all_text,
-        pages=sections,  # DOCX has no native "pages" — paragraphs stand in
+        text="\n\n".join(block_text),
+        pages=block_text,
+        blocks=blocks,
         metadata={
             "source_type": "docx",
-            "filename": path.split("/")[-1],
-            "paragraph_count": len(sections),
-            "table_count": len(d.tables),
-            "heading_count": heading_count,
+            "filename": Path(path).name,
+            "paragraph_count": paragraph_count,
+            "table_count": table_count,
+            "heading_count": sum(1 for block in blocks if block.text.startswith("## ")),
         },
     )
 
 
 def load_document(path: str) -> LoadedDocument:
-    """Single entry point — dispatches by file extension."""
-    if path.lower().endswith(".pdf"):
-        return load_pdf(path)
-    elif path.lower().endswith(".docx"):
-        return load_docx(path)
-    else:
-        raise ValueError(f"Unsupported file type: {path}")
-
-
-if __name__ == "__main__":
-    import sys
-
-    for test_path in sys.argv[1:]:
-        result = load_document(test_path)
-        print(f"\n=== {test_path} ===")
-        print(f"metadata: {result.metadata}")
-        print(f"total chars: {len(result.text)}")
-        print(f"first 400 chars:\n{result.text[:400]}")
+    file_path = Path(path)
+    if not file_path.is_file():
+        raise FileNotFoundError(f"Target document not found: {path}")
+    if file_path.suffix.lower() == ".pdf":
+        return load_pdf(str(file_path))
+    if file_path.suffix.lower() == ".docx":
+        return load_docx(str(file_path))
+    raise ValueError(f"Unsupported file type: {path}")

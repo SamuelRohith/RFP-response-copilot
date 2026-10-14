@@ -1,4 +1,4 @@
-pymupdf
+pypdf
 python-docx
 pydantic
 langchain-text-splitters
@@ -8,3 +8,6 @@ python-dotenv
 chromadb
 sentence-transformers
 streamlit
+numpy
+tqdm
+pytest

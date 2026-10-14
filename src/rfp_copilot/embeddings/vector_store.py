@@ -28,6 +28,12 @@ def store_kb_chunks(kb_chunks: list, embed_fn, client: chromadb.ClientAPI | None
     """Embeds and stores KBChunk objects (from kb_builder.py) into Chroma,
     carrying doc_type and source_filename through as metadata."""
     client = client or get_client()
+    # A rebuild represents the current folder contents exactly: removed files
+    # must not leave stale vectors behind.
+    try:
+        client.delete_collection(name=collection_name)
+    except Exception:
+        pass
     collection = client.get_or_create_collection(name=collection_name)
 
     texts = [kc.chunk.text for kc in kb_chunks]
@@ -45,6 +51,10 @@ def store_kb_chunks(kb_chunks: list, embed_fn, client: chromadb.ClientAPI | None
                 "doc_type": kc.doc_type,
                 "source_filename": kc.source_filename,
                 "section_heading": kc.chunk.section_heading or "",
+                "page": kc.chunk.metadata.get("page") or 0,
+                "block_index": kc.chunk.metadata.get("block_index") or 0,
+                "start_char": kc.chunk.metadata.get("start_char") or 0,
+                "end_char": kc.chunk.metadata.get("end_char") or 0,
             }
             for kc in kb_chunks
         ],
@@ -78,6 +88,10 @@ def store_rfp_chunks(chunks: list, doc_id: str, embed_fn, client: chromadb.Clien
             {
                 "doc_id": doc_id,
                 "section_heading": c.section_heading or "",
+                "page": c.metadata.get("page") or 0,
+                "block_index": c.metadata.get("block_index") or 0,
+                "start_char": c.metadata.get("start_char") or 0,
+                "end_char": c.metadata.get("end_char") or 0,
             }
             for c in chunks
         ],

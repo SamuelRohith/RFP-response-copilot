@@ -15,7 +15,7 @@ from rfp_copilot.embeddings.embedder import get_sentence_transformer_embedder
 from rfp_copilot.embeddings.vector_store import store_kb_chunks, store_rfp_chunks
 from rfp_copilot.extraction.extractor import extract_from_chunks, save_structured_requirements
 from rfp_copilot.generation.rag import generate_grounded_answer, retrieve_evidence
-from rfp_copilot.ingestion.chunkers import chunk_document
+from rfp_copilot.ingestion.chunkers import chunk_document_blocks
 from rfp_copilot.ingestion.cleaners import clean_text
 from rfp_copilot.ingestion.loaders import load_document
 from rfp_copilot.knowledge_base.kb_builder import build_knowledge_base
@@ -38,7 +38,7 @@ def ingest_rfp(uploaded_file) -> Path:
         temporary_path = Path(temporary_file.name)
     try:
         document = load_document(str(temporary_path))
-        chunks = chunk_document(clean_text(document.text), doc_id=uploaded_file.name)
+        chunks = chunk_document_blocks(document.blocks, doc_id=uploaded_file.name)
         extraction = extract_from_chunks(chunks)
         output_path = OUTPUT_DIR / f"{Path(uploaded_file.name).stem}_structured_requirements.json"
         save_structured_requirements(extraction, output_path)

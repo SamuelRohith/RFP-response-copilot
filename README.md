@@ -1,15 +1,15 @@
 # RFP Response Co-pilot
 
-A small local RAG application for drafting grounded RFP responses. It can process an RFP, search your company knowledge base, and use Gemini to generate a response backed only by retrieved evidence.
+A local RFP ingestion, retrieval, and grounded-response application. It preserves PDF page and DOCX block/table provenance while processing RFPs, searches a local company knowledge base, and uses Gemini to draft evidence-grounded responses.
 
 ## What it does
 
 ```text
 RFP PDF/DOCX
   -> text extraction and cleaning
-  -> section-aware chunks
+  -> page/block-aware, section-aware chunks
   -> Gemini structured extraction
-  -> JSON requirements output + ChromaDB RFP storage
+  -> schema-validated JSON requirements output + ChromaDB RFP storage
 
 Your question or RFP requirement
   -> local semantic search of the current RFP and company knowledge
@@ -17,7 +17,7 @@ Your question or RFP requirement
   -> Gemini grounded response with source labels
 ```
 
-The structured RFP extraction identifies requirements, questions, compliance items, and evaluation criteria. The RAG response stage searches both the `current_rfp` collection and the `knowledge_base` collection. This gives Gemini the client's relevant requirement/context and the company's supporting evidence. RFP text is never treated as proof of a company capability.
+The structured RFP extraction identifies requirements, questions, compliance items, evaluation criteria, and submission instructions. Every stored chunk retains document, section, page (for PDFs), block index, and character-boundary metadata. The RAG response stage searches both the `current_rfp` collection and the `knowledge_base` collection. This gives Gemini the client's relevant requirement/context and the company's supporting evidence. RFP text is never treated as proof of a company capability.
 
 ## Setup
 
@@ -75,8 +75,19 @@ python scripts/run_ingestion.py path\\to\\your_rfp.docx
 
 For an offline storage-only test, use `--dummy-embeddings`. Those embeddings are not semantically meaningful, so do not use them for RAG answers.
 
+## Week 5 validation
+
+The project includes a focused `pytest` suite for DOCX loading/table conversion, cleaning, source-aware chunk metadata, and extraction-schema validation:
+
+```powershell
+pytest -q
+```
+
+The Week 5 structural-inspection template is at `data/evaluation/rfp_understanding.md`. Complete it manually when reviewing a new training RFP, including examples of mandatory/advisory/permissive language, table requirements, and repeated concepts.
+
 ## Notes
 
-- The first normal run downloads the local `all-MiniLM-L6-v2` embedding model.
+- The first normal run downloads the local `BAAI/bge-small-en-v1.5` embedding model.
+- Because the embedding model was upgraded, choose **Build knowledge base** and **Process RFP** once after updating so the local vectors are recreated with the new model.
 - RFPs, knowledge-base documents, generated files under `data/outputs/`, and the local ChromaDB store are ignored by Git.
 - Review every generated response before using it in a proposal.
